@@ -62,9 +62,14 @@ analyzes a small Gram matrix before applying rotations and cuts.
 Hermitian and right-only modes perform QR/SVD rank reduction before the
 reduced solve. Refreshes and restarts work on copies of search spans,
 preserving the last computed Ritz pairs for return if a later solve fails.
-Convergence is not accepted until a requested ``expected_dim`` is
-recovered and successive Ritz sets have equal sizes. If no reduced solve
-succeeds, the returned eigenvalue array and spans are empty.
+Returned pairs and convergence comparisons use only in-contour Ritz
+values on every iteration. Convergence requires successive nonempty
+in-contour sets of equal size, with at least ``expected_dim`` values when
+requested. Periodic pruning controls the working span independently;
+exterior directions can remain available for later iterations. If no
+reduced solve succeeds or the last successful solve has no in-contour
+values, the returned eigenvalue array and spans are empty and the result
+is nonconverged.
 
 This separation keeps decisions about rank and convergence independent
 of vector storage. It also allows direct projector use without running

@@ -12,6 +12,7 @@ iteration. NumPy/SciPy support is included; NGSolve support is optional.
    :maxdepth: 2
 
    getting_started
+   demos
    architecture
    limitations
    api

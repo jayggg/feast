@@ -15,14 +15,39 @@ From the repository root, in your chosen Python environment::
     python -m pip install -e '.[docs]'
     python -m sphinx -b html -W --keep-going docs docs/_build/html
 
-Open ``docs/_build/html/index.html`` in a browser. On macOS::
+This is exactly the command CI runs, so a build that succeeds locally
+without warnings will also succeed online. Open the result in a
+browser. On macOS::
 
     open docs/_build/html/index.html
 
-Rerun the Sphinx command after editing docstrings or documentation pages;
-the API reference is regenerated automatically. A separate
+Rerun the Sphinx command after editing docstrings, documentation pages,
+or demos; the API reference is regenerated automatically. A separate
 ``sphinx-apidoc`` step is unnecessary because ``api.rst`` and
-``ngsolve.rst`` already select the modules to document.
+``ngsolve.rst`` already select the modules to document. If a page looks
+stale, delete ``docs/_build`` and rebuild.
+
+Live preview
+------------------
+
+While writing, ``sphinx-autobuild`` (installed by the ``docs`` extra)
+serves the documentation locally and rebuilds and reloads the browser
+on every save::
+
+    sphinx-autobuild docs docs/_build/html --watch src --watch demos
+
+Then open http://127.0.0.1:8000. The ``--watch`` options also rebuild
+when docstrings or demo scripts change. Stop the server with Ctrl-C.
+
+Demos in the documentation
+--------------------------------
+
+The scripts in ``demos/`` are shown in :doc:`demos` and in
+:doc:`getting_started` with ``literalinclude`` directives, so the
+documentation always shows the current files. Sphinx does not run them.
+They are run by ``tests/test_demos.py``, which also fails if a demo is
+not referenced in ``docs/demos.rst``. A ``literalinclude`` pointing at a
+missing file produces a warning, which ``-W`` turns into an error.
 
 NGSolve and Netgen imports are mocked during documentation builds so
 the reference can be generated without those optional native libraries.
@@ -39,10 +64,18 @@ libraries.
 Automation
 ----------------
 
-The same install and build commands can run in CI. ``-W`` makes Sphinx
-warnings fail the build, and ``--keep-going`` collects all warnings in
-one run. Publish the contents of ``docs/_build/html`` using your chosen
-static hosting service. No hosting or CI provider is configured here.
+GitHub Actions runs two workflows from ``.github/workflows``:
+
+* ``ci.yml`` on every push and pull request: ``ruff check``; the test
+  suite without NGSolve on Python 3.10 and 3.13 (this proves the core
+  does not need it); and the full suite, including NGSolve tests and
+  demos, with NGSolve installed from PyPI.
+* ``docs.yml`` builds the documentation with the command above on every
+  push and pull request. On pushes to ``main`` it publishes the HTML to
+  GitHub Pages at https://jayggg.github.io/feast/.
+
+Publishing requires a one-time repository setting: Settings → Pages →
+Build and deployment → Source: GitHub Actions.
 
 Keep the Python source, ``docs/*.rst``, and ``docs/conf.py`` in version
 control. Generated HTML, bytecode, caches, and package metadata are

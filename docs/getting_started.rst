@@ -22,20 +22,9 @@ A matrix eigenproblem
 This example finds the two eigenvalues near 3.5. Matrices may be dense
 NumPy arrays or SciPy sparse matrices. Omitting B uses the identity.
 
-.. code-block:: python
-
-   import numpy as np
-   from feast import Contour, feast
-   from feast.backends.numpy_backend import MatrixResolvent, NumpySpan
-
-   A = np.diag([-1.0, 1.0, -1j, 1j, 3.0, 4.0])
-   R = MatrixResolvent(A)
-   C = Contour.circle(center=3.5, radius=0.8, npts=8)
-   Y = NumpySpan.random(A.shape[0], 4, seed=10)
-
-   result = feast(R, C, Y, mode="biorth", seed=10)
-   print(np.sort_complex(result.eigenvalues))
-   print(result.converged)
+.. literalinclude:: ../demos/core/01_quickstart.py
+   :language: python
+   :start-at: import numpy
 
 ``result.right`` contains the right vectors; ``result.left`` contains
 the left vectors in biorthogonal mode. NumPy spans store vectors as
@@ -58,7 +47,8 @@ on basis singular values; it differs from ``eta_tol``, which acts on the
 biorthogonal B-Gram matrix. ``expected_dim`` requests replenishment if the
 basis becomes too small. If that size cannot be recovered within the
 refresh and restart limits, ``result.converged`` is false and the result
-contains the last computed eigenvalue/vector pairs.
+contains the last computed in-contour eigenvalue/vector pairs. Convergence
+requires at least ``expected_dim`` in-contour values when it is supplied.
 
 For reproducibility, seed both the initial span and the driver. To retain
 an initial span for another run, pass ``Y.copy()``.
@@ -78,11 +68,19 @@ Diagnostics
    residuals = R.residual(result.eigenvalues, result.right, result.left)
    inside = C.within(result.eigenvalues)
 
-The convergence flag measures stability of the Ritz values, not residual
-accuracy or completeness. Inspect residuals, contour membership, and span
-dimensions. See :doc:`limitations` for currently known failure cases.
-History entries are recorded before contour trimming, so they need not
-have the same length as the final eigenvalue array.
+The convergence flag measures stability of nonempty in-contour Ritz sets;
+it does not certify residual accuracy or completeness. Inspect residuals
+and span dimensions. See :doc:`limitations` for currently known failure
+cases. Returned pairs always satisfy the contour's membership predicate,
+including when the iteration limit is reached. Empty results are
+nonconverged.
+
+``check_contour`` controls periodic pruning of the working span. Setting
+it to zero disables pruning but does not disable membership filtering of
+results or convergence checks. History Ritz values and residuals describe
+the full reduced solve before pruning; Hausdorff distances compare only
+the in-contour subsets. History arrays can therefore be longer than the
+returned eigenvalue array.
 
 Contours and direct filtering
 -----------------------------------

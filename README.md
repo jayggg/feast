@@ -2,6 +2,7 @@
 
 FEAST contour-integral eigensolver for selected eigenvalues and eigenspaces
 of matrix pencils. Import name: `feast`. Distribution name: `feast-eig`.
+Documentation: https://jayggg.github.io/feast/
 
 The package separates three concepts:
 
@@ -41,7 +42,8 @@ result = feast(R, C, Y, mode="biorth", seed=10)
 print(np.sort_complex(result.eigenvalues))
 ```
 
-See [getting started](docs/getting_started.rst),
+See [getting started](docs/getting_started.rst), the runnable
+[demos](demos/),
 [NGSolve usage](docs/ngsolve.rst), and
 [backend contracts](docs/architecture.rst).
 Read the [current limitations](docs/limitations.rst) before relying on
@@ -54,7 +56,9 @@ python -m pip install -e '.[docs]'
 python -m sphinx -b html -W --keep-going docs docs/_build/html
 ```
 
-Open `docs/_build/html/index.html`. Sphinx generates the API reference from
+Open `docs/_build/html/index.html`, or run
+`sphinx-autobuild docs docs/_build/html --watch src --watch demos` for a
+live-reloading preview at http://127.0.0.1:8000. Sphinx generates the API reference from
 NumPy-style docstrings using autodoc and Napoleon. Rerun the build after
 edits; no separate API-generation command is needed. See
 [documentation maintenance](docs/building.rst) for details.
@@ -64,7 +68,7 @@ edits; no separate API-generation command is needed. See
 ```sh
 python -m pip install -e '.[dev]'
 python -m pytest
-python -m ruff check src tests
+python -m ruff check src tests demos
 ```
 
 NGSolve tests run when NGSolve is available and otherwise skip. Preserve
