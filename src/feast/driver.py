@@ -45,7 +45,8 @@ class FeastHistory:
     ritz_values : list of numpy.ndarray
         Ritz values after each successful reduced solve, before trimming.
     hausdorff : list of float
-        Eigenvalue-set distances divided by ``contour.scale``.
+        In-contour eigenvalue-set distances divided by ``contour.scale``.
+        Infinite if either set is empty or the comparison was reset.
     residuals : list of numpy.ndarray
         Backend residuals when ``report_residuals=True``.
     gram_singular_values : list of numpy.ndarray
@@ -71,15 +72,16 @@ class FeastResult:
     Attributes
     ----------
     eigenvalues : numpy.ndarray
-        Most recently computed Ritz values, with any contour trimming.
+        In-contour Ritz values from the last successful reduced solve.
     right : Span
         Last computed right Ritz vectors, one column per eigenvalue.
     left : Span or None
         Corresponding left Ritz vectors in biorthogonal mode; otherwise
         ``None``. Search vectors added for refresh are not returned.
     converged : bool
-        Whether the relative eigenvalue-set distance met ``stop_tol``.
-        The requested ``expected_dim``, if any, must also be recovered.
+        Whether successive nonempty in-contour sets have equal sizes and
+        their relative distance met ``stop_tol``. At least ``expected_dim``
+        in-contour values must be found when that parameter is supplied.
         This is not a residual-based accuracy or completeness guarantee.
     iterations : int
         Total attempted iterations across all restarts.
@@ -104,7 +106,7 @@ class FeastResult:
 
 def _hausdorff(lam: np.ndarray, lam0: np.ndarray, scale: float) -> float:
     """Relative Hausdorff distance between eigenvalue sets."""
-    if len(lam0) == 0:
+    if len(lam) == 0 or len(lam0) == 0:
         return np.inf
     h = np.abs(lam[:, None] - lam0[None, :])
     return max(h.min(axis=0).max(), h.min(axis=1).max()) / scale
@@ -193,14 +195,17 @@ def feast(
         Minimum requested span size. Smaller spans are replenished while
         refreshes remain, and contour trimming will not reduce the span
         below this size. A run that cannot recover this dimension is
-        reported as nonconverged. This does not certify an eigenvalue
-        count. Newly appended columns must pass through another solve.
+        reported as nonconverged. Convergence also requires at least this
+        many in-contour Ritz values. This does not certify completeness.
+        Newly appended columns must pass through another solve.
     nrefresh : int, optional
         Maximum replenishments per attempt; defaults to 3.
     check_contour : int, optional
-        Check for out-of-contour Ritz values every this many iterations;
-        defaults to 3. Zero disables the check. A check does not remove
-        all vectors or reduce the span below ``expected_dim``.
+        Prune out-of-contour directions from the working span every this
+        many iterations; defaults to 3. Zero disables periodic pruning.
+        Pruning does not remove all vectors or reduce the working span
+        below ``expected_dim``. Returned pairs and convergence always use
+        only in-contour Ritz values, independently of this setting.
     report_residuals : bool, optional
         Record backend residuals in the history; defaults to ``False``.
         The backend must implement ``residual``. Residuals do not control
@@ -217,16 +222,17 @@ def feast(
     Returns
     -------
     FeastResult
-        Last successfully computed Ritz pairs and diagnostics. Returned
-        spans have one column per eigenvalue, including on nonconvergence.
+        Last successfully computed in-contour Ritz pairs and diagnostics.
+        Spans have one column per eigenvalue, including on nonconvergence.
         If no reduced solve succeeds, the eigenvalues and spans are empty.
 
     Notes
     -----
     A refresh or restart resets the convergence comparison. At least two
-    successful solves with equal eigenvalue counts are needed afterward.
-    See the documentation's current limitations for contour membership
-    and eigenvalue-set convergence caveats.
+    successful solves with equal, nonzero in-contour eigenvalue counts
+    are needed afterward. Empty in-contour sets are nonconverged.
+    See the documentation's current limitations for eigenvalue-set
+    convergence caveats.
     """
     if mode not in _MODES:
         raise ValueError(f"mode must be one of {_MODES}")
@@ -334,29 +340,31 @@ def feast(
                 res = resolvent.residual(lam, y, yl)
                 history.residuals.append(res)
                 log.info("residuals: %s", np.array_str(res, precision=2))
-            dist = _hausdorff(lam, lam0, contour.scale)
-            same_count = len(lam) == len(lam0)
+            inside = contour.within(lam)
+            cut = [k for k in range(len(lam)) if not inside[k]]
+            saved_lam, saved_y, saved_yl = lam[inside].copy(), y, yl
+            if cut:
+                saved_y = y.copy()
+                saved_y.remove(cut)
+                if yl is not None:
+                    saved_yl = yl.copy()
+                    saved_yl.remove(cut)
+
+            dist = _hausdorff(saved_lam, lam0, contour.scale)
+            same_count = len(saved_lam) == len(lam0)
             history.hausdorff.append(dist)
             log.info(
-                "Ritz values %s; relative Hausdorff %.3e",
+                "Ritz values %s; in-contour relative Hausdorff %.3e",
                 np.array_str(np.sort_complex(lam), precision=6), dist,
             )
 
+            keep_enough = (
+                expected_dim is None or len(saved_lam) >= expected_dim
+            )
             if check_contour and it % check_contour == 0:
-                inside = contour.within(lam)
-                cut = [k for k in range(len(lam)) if not inside[k]]
-                keep_enough = (
-                    expected_dim is None
-                    or len(lam) - len(cut) >= expected_dim
-                )
-                if cut and len(cut) < len(lam) and keep_enough:
+                if cut and len(saved_lam) and keep_enough:
                     log.info("removing out-of-contour Ritz values %s", cut)
-                    lam = lam[inside]
-                    y.remove(cut)
-                    if yl is not None:
-                        yl.remove(cut)
-
-            saved_lam, saved_y, saved_yl = lam.copy(), y, yl
+                    y, yl = saved_y, saved_yl
 
             if expected_dim is not None and y.dim < expected_dim:
                 if refreshes_left > 0 and it < niterations:
@@ -369,11 +377,11 @@ def feast(
                 log.warning("requested span dimension was not recovered")
                 break
 
-            lam0 = lam
+            lam0 = saved_lam
             if y.dim == 0:
                 log.warning("no candidates left; restarting")
                 break
-            if same_count and dist < stop_tol:
+            if keep_enough and same_count and dist < stop_tol:
                 log.info("FEAST converged: Hausdorff %.3e", dist)
                 converged = True
                 break

@@ -282,3 +282,94 @@ def test_zero_filtered_span_can_refresh(nrefresh):
     )
     assert result.converged == bool(nrefresh)
     assert result.right.dim == len(result.eigenvalues) == nrefresh
+
+
+@pytest.mark.parametrize("mode", ["hermitian", "right", "biorth"])
+@pytest.mark.parametrize("check_contour", [0, 1, 3, 100])
+def test_convergence_uses_only_in_contour_pairs(mode, check_contour):
+    r = MatrixResolvent(np.diag([0.25, 2.0]))
+    contour = Contour.circle(0, 1, npts=4)
+    y = NumpySpan(np.eye(2))
+    result = feast(
+        r, contour, y, mode=mode, yl=y.copy(),
+        check_contour=check_contour, niterations=4,
+    )
+    assert result.converged
+    assert result.iterations == 2
+    assert np.allclose(result.eigenvalues, [0.25])
+    assert result.right.dim == 1
+    if result.left is not None:
+        assert result.left.dim == 1
+    assert np.max(r.residual(
+        result.eigenvalues, result.right, result.left,
+    )) < 1e-12
+    assert len(result.history.ritz_values[0]) == 2
+    assert np.isinf(result.history.hausdorff[0])
+    assert result.history.hausdorff[-1] < 1e-12
+
+
+@pytest.mark.parametrize("mode", ["hermitian", "right", "biorth"])
+@pytest.mark.parametrize("check_contour", [0, 1, 3])
+def test_all_exterior_pairs_return_empty_nonconverged(mode, check_contour):
+    y = NumpySpan(np.eye(2))
+    result = feast(
+        MatrixResolvent(np.diag([2.0, 3.0])),
+        Contour.circle(0, 1, npts=4), y, yl=y.copy(), mode=mode,
+        check_contour=check_contour, niterations=4,
+    )
+    assert not result.converged
+    assert result.right.dim == len(result.eigenvalues) == 0
+    if result.left is not None:
+        assert result.left.dim == 0
+    assert np.all(np.isinf(result.history.hausdorff))
+
+
+@pytest.mark.parametrize("mode", ["hermitian", "right", "biorth"])
+def test_exterior_pairs_do_not_satisfy_expected_dimension(mode):
+    y = NumpySpan(np.eye(2))
+    result = feast(
+        MatrixResolvent(np.diag([0.25, 2.0])),
+        Contour.circle(0, 1, npts=4), y, yl=y.copy(), mode=mode,
+        expected_dim=2, check_contour=1, niterations=4,
+    )
+    assert not result.converged
+    assert result.right.dim == len(result.eigenvalues) == 1
+    assert np.allclose(result.eigenvalues, [0.25])
+    assert all(len(values) == 2 for values in result.history.ritz_values)
+
+
+@pytest.mark.parametrize("mode", ["hermitian", "right", "biorth"])
+def test_iteration_limit_filters_returned_pairs(mode):
+    y = NumpySpan(np.eye(2))
+    result = feast(
+        MatrixResolvent(np.diag([0.25, 2.0])),
+        Contour.circle(0, 1, npts=4), y, yl=y.copy(), mode=mode,
+        check_contour=0, niterations=1,
+    )
+    assert not result.converged
+    assert result.right.dim == len(result.eigenvalues) == 1
+    assert np.allclose(result.eigenvalues, [0.25])
+    if result.left is not None:
+        assert result.left.dim == 1
+
+
+@pytest.mark.parametrize("ritz_sets", [
+    [[0.25, 0.9999], [0.25, 1.0001], [0.25, 1.0001]],
+    [[0.25, 2.0], [2.0, 3.0], [0.25, 2.0], [0.25, 2.0]],
+    [[0.25, 2.0], [0.25, 3.0]],
+])
+def test_convergence_tracks_in_contour_sets(monkeypatch, ritz_sets):
+    values = iter(ritz_sets)
+
+    def small_eig(a, b, mode):
+        return np.array(next(values)), None, np.eye(2)
+
+    monkeypatch.setattr("feast.driver._small_eig", small_eig)
+    result = feast(
+        MatrixResolvent(np.diag([0.25, 2.0])),
+        Contour.circle(0, 1, npts=4), NumpySpan(np.eye(2)),
+        check_contour=0, stop_tol=1e-3, niterations=len(ritz_sets),
+    )
+    assert result.converged
+    assert result.iterations == len(ritz_sets)
+    assert np.allclose(result.eigenvalues, [0.25])
