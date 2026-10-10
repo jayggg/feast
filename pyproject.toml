@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Import name is `feast`; the distribution name is qualified because
+# `feast` on PyPI is taken by an unrelated project.
+name = "feast-eig"
+version = "2.0.0.dev0"
+description = "FEAST contour-integral eigensolver with pluggable resolvent backends"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Jay Gopalakrishnan", email = "gjay@pdx.edu" }]
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+ngsolve = ["ngsolve"]
+dev = ["pytest", "ruff"]
+docs = ["sphinx>=7,<10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ngsolve: tests requiring an NGSolve installation",
+]
+
+[tool.ruff]
+line-length = 79
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "NPY"]
