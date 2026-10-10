@@ -2,7 +2,7 @@
 
 -Δu = λu with u = 0 on the boundary has eigenvalues (l² + m²)π².
 The circle below encloses 2π² and the degenerate pair 5π², 5π², and
-excludes 8π². The pencil is Hermitian, so ``mode="hermitian"`` applies.
+excludes 8π². The pencil is Hermitian, so mode="hermitian" applies.
 
 Only the setup differs from the matrix demos: assemble forms on a
 complex finite element space, wrap the matrices in NGPencilResolvent
@@ -10,7 +10,12 @@ and start from an NGSpan. The feast() call is the same.
 
 Requires: ngsolve (pip install 'feast-eig[ngsolve]').
 Run:      python demos/ngsolve/01_dirichlet_square.py
+          netgen demos/ngsolve/01_dirichlet_square.py
+The Netgen window displays the lowest mode; close it to finish the run.
 """
+
+import logging
+import sys
 
 import ngsolve as ng
 import numpy as np
@@ -19,6 +24,12 @@ from netgen.geom2d import unit_square
 from feast import Contour, feast
 from feast.backends.ngsolve import NGPencilResolvent, NGSpan
 from feast.backends.ngsolve.post import gridfun
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    stream=sys.stdout,  # to combine with other printouts below
+)
 
 mesh = ng.Mesh(unit_square.GenerateMesh(maxh=0.15))
 fes = ng.H1(mesh, order=3, dirichlet="left|right|top|bottom", complex=True)
@@ -35,11 +46,11 @@ result = feast(R, C, Y, mode="hermitian", seed=1)
 lam = np.sort(result.eigenvalues.real)
 exact = np.array([2, 5, 5]) * np.pi**2
 print(result)
-print("computed:", lam)
+print("computed:", lam)  # into sys.stdout
 print("exact:   ", exact)
 
-# A grid function for drawing, e.g. ng.Draw(mode) in a notebook.
-mode = gridfun(result.right, i=0)
+mode = gridfun(result.right, i=int(np.argmin(result.eigenvalues.real)))
+ng.Draw(mode.real, mesh, "lowest_mode")
 
 assert result.converged
 assert np.allclose(lam, exact, rtol=2e-3)  # discretization error
