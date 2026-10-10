@@ -48,8 +48,8 @@ def simple_multiple_zoom(c1, c2, ew, delta=None):
     c1, c2 : float
         Endpoints of the enclosing real interval.
     ew : sequence of float
-        Nonempty eigenvalue list inside the interval. Supply sorted values;
-        unsorted input currently produces inconsistent simple centers.
+        Nonempty eigenvalue list inside the interval, in any order. It is
+        not modified; returned indices refer to its original order.
     delta : float or None, optional
         Neighboring values less than this distance apart are grouped.
         Defaults to one tenth of the interval length divided by the count.
@@ -66,7 +66,10 @@ def simple_multiple_zoom(c1, c2, ew, delta=None):
     Notes
     -----
     Clustering is based on distance, not a certified multiplicity test.
-    Validate that each contour encloses its intended cluster before use.
+    Radii are half the gap to the nearest value outside the group, so a
+    long chain of closely spaced values can extend beyond its proposed
+    circle. Validate that each contour encloses its intended cluster
+    before use.
     """
 
     # Set default delta
@@ -124,7 +127,7 @@ def simple_multiple_zoom(c1, c2, ew, delta=None):
     rad = []
     ctr = []
     for sind in simplewindices:
-        ctr += [ew[sind]]
+        ctr += [e[sind+1]]   # e is sorted and padded by c1 at the front
         rad += [0.5 * min(e[sind+1] - e[sind],
                           e[sind+2] - e[sind+1])]
 

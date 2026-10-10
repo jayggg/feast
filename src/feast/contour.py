@@ -177,17 +177,41 @@ class Contour:
         w: np.ndarray,
         within: Callable[[np.ndarray], np.ndarray],
         name: str = "custom",
+        scale: float | None = None,
     ) -> "Contour":
         """Arbitrary user-supplied nodes, weights, and membership test.
 
         No boundary tolerance is applied here: for a custom contour the
         supplied ``within`` is authoritative, and any margin policy is
-        the caller's to build into it."""
+        the caller's to build into it.
+
+        scale: characteristic magnitude used to make eigenvalue-set
+        distances relative (see :attr:`scale`). Defaults to
+        ``max(abs(z))``, the largest node magnitude. This bounds the
+        magnitude of enclosed eigenvalues for a convex contour, and is
+        nonzero for any contour with a nonzero node, including one
+        centered at the origin. For circle nodes it is close to the
+        scale of :meth:`circle`: slightly smaller (by at most a factor
+        ``cos(pi/npts)``) when the circle does not enclose the origin,
+        and at most twice as large when it does. Pass a value explicitly when
+        enclosed eigenvalues are known to be much smaller than the
+        nodes, for instance a large contour around a few tiny ones.
+        """
         z = np.asarray(z, dtype=complex)
         w = np.asarray(w, dtype=complex)
         if z.shape != w.shape:
             raise ValueError("z and w must have the same shape")
-        return cls(z, w, within, name, scale=float(abs(z.mean())))
+        if z.size == 0:
+            raise ValueError("a contour needs at least one node")
+        if scale is None:
+            scale = float(np.abs(z).max())
+        scale = float(scale)
+        if not (np.isfinite(scale) and scale > 0):
+            raise ValueError(
+                f"scale must be positive and finite, got {scale}; "
+                "pass scale= explicitly"
+            )
+        return cls(z, w, within, name, scale=scale)
 
     # Derived quantities ###############################################
 

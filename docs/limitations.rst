@@ -3,23 +3,18 @@ Current limitations
 
 These limitations remain open in the current development version.
 
-* Custom contours use ``abs(mean(z))`` as their convergence scale. A
-  zero or nearly zero mean can prevent convergence. Built-in circle and
-  ellipse factories use a scale that accounts for the contour radius.
-* ``simple_multiple_zoom`` mixes sorted indices with unsorted centers.
-  Supply sorted real eigenvalues and keep the permutation if original
-  indices are needed. Check that each proposed contour encloses its
-  intended cluster before using it.
-
-There is no DPG discretization backend, MPI scheduler, automatic
-mesh-transfer method, or built-in adaptive refinement loop. Residual
-norms are backend-specific; convergence uses eigenvalue-set distance
-alone and does not certify that all enclosed eigenvalues were found.
-
-Hermitian and right-only modes reduce filtered bases by QR and SVD using
-``rank_tol``. Biorthogonal mode uses the B-Gram threshold ``eta_tol``.
-Results contain matching in-contour eigenvalues and vectors from the last
-successful reduced solve. Empty in-contour sets and runs with fewer than
-``expected_dim`` in-contour values are nonconverged. Rank tolerances still
-require judgment: directions below the
-threshold are discarded even when they contain desired spectral content.
+* **Convergence is not a completeness certificate.** It is judged by the
+  distance between successive in-contour eigenvalue sets alone. It does
+  not certify that every enclosed eigenvalue was found, nor residual
+  accuracy. Inspect residuals (their norms are backend-specific) and
+  choose a starting span larger than the expected eigenvalue count.
+* **Rank tolerances require judgment.** Hermitian and right-only modes
+  discard filtered directions with singular values at or below
+  ``rank_tol`` times the largest; biorthogonal mode applies ``eta_tol``
+  to the B-Gram matrix. Directions below the threshold are discarded
+  even when they contain desired spectral content.
+* **Contour splitting is distance based.** ``simple_multiple_zoom``
+  groups eigenvalues closer than ``delta`` and gives each group a radius
+  of half the gap to its nearest outside neighbor. A long chain of
+  closely spaced values can extend beyond its proposed circle. Check
+  that each contour encloses its intended cluster before using it.

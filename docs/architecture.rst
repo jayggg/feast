@@ -105,4 +105,4 @@ Its objects must support ``copy`` and ``rotate``. Reliability requires
 the source-error assumptions described in :mod:`feast.estimator`;
 this function does not establish them for an arbitrary backend.
 ``ExactSourceError`` is a reference implementation using a trusted
-resolvent. A production DPG source estimator is not included.
+resolvent.

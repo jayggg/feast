@@ -99,4 +99,6 @@ Contours and direct filtering
 Circle rules are ``"trapezoid_shifted"``, ``"trapezoid"``, and
 ``"snug"``. Ellipse rules are ``"trapezoid_shifted"`` and ``"snug"``.
 Use ``Contour.custom(z, w, within)`` for supplied nodes, weights, and a
-membership function. Keep eigenvalues away from the contour itself.
+membership function. Its convergence scale defaults to the largest node
+magnitude; pass ``scale=`` to override it. Keep eigenvalues away from
+the contour itself.

@@ -73,3 +73,48 @@ def test_ellipse_boundary_tolerance():
     on_boundary = np.array([1.0 + 0j, -1.0 + 0j, 1j * e, -1j * e])
     assert C.within(on_boundary).all()
     assert not C.within(np.array([1.0 + 1e-8, 1j * e * (1 + 1e-8)])).any()
+
+
+def test_custom_scale_default_is_max_node_magnitude():
+    # Nodes symmetric about the origin have mean ~0; the scale must not.
+    c = Contour.circle(center=0.0, radius=2.0, npts=16)
+    C = Contour.custom(c.z, c.w, lambda lam: np.abs(lam) < 2)
+    assert np.isclose(C.scale, 2.0)
+    # Away from the origin it is close to the circle factory's scale.
+    c = Contour.circle(center=5.0 + 1j, radius=0.5, npts=8)
+    C = Contour.custom(c.z, c.w, c.within)
+    assert np.cos(np.pi / 8) * c.scale <= C.scale <= c.scale
+
+
+def test_custom_scale_override_and_validation():
+    c = Contour.circle(center=0.0, radius=1.0, npts=8)
+    assert Contour.custom(c.z, c.w, c.within, scale=0.1).scale == 0.1
+    for bad in (0.0, -1.0, np.inf, np.nan):
+        with pytest.raises(ValueError):
+            Contour.custom(c.z, c.w, c.within, scale=bad)
+    with pytest.raises(ValueError):
+        Contour.custom(np.zeros(4), np.ones(4), c.within)  # max|z| = 0
+    with pytest.raises(ValueError):
+        Contour.custom(np.array([]), np.array([]), c.within)
+
+
+def test_custom_contour_about_origin_converges_like_circle():
+    # Regression: the old default scale abs(mean(z)) was ~1e-17 here,
+    # inflating relative distances by ~1e17.
+    from feast import feast
+    from feast.backends.numpy_backend import MatrixResolvent, NumpySpan
+
+    A = np.diag([-0.5, 0.5, 3.0, -3.0, 5.0])
+    circle = Contour.circle(center=0.0, radius=1.0, npts=16)
+    custom = Contour.custom(circle.z, circle.w, circle.within)
+    runs = [
+        feast(MatrixResolvent(A), C, NumpySpan.random(5, 3, seed=1),
+              mode="hermitian", seed=1)
+        for C in (circle, custom)
+    ]
+    for r in runs:
+        assert r.converged
+        assert np.allclose(np.sort(r.eigenvalues.real), [-0.5, 0.5])
+    assert runs[0].iterations == runs[1].iterations
+    assert np.allclose(runs[0].history.hausdorff[1:],
+                       runs[1].history.hausdorff[1:])

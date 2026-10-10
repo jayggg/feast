@@ -19,3 +19,14 @@ napoleon_google_docstring = False
 napoleon_use_ivar = True
 exclude_patterns = ["_build"]
 html_theme = "alabaster"
+html_theme_options = {
+    "description": "Contour-integral eigensolvers",
+    "github_user": "jayggg",
+    "github_repo": "feast",
+    "github_button": True,
+    "github_type": "star",
+    "extra_nav_links": {
+        "Source code on GitHub": "https://github.com/jayggg/feast",
+        "Report an issue": "https://github.com/jayggg/feast/issues",
+    },
+}
