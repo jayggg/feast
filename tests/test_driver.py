@@ -373,3 +373,39 @@ def test_convergence_tracks_in_contour_sets(monkeypatch, ritz_sets):
     assert result.converged
     assert result.iterations == len(ritz_sets)
     assert np.allclose(result.eigenvalues, [0.25])
+
+
+@pytest.mark.parametrize("mode", ["hermitian", "right"])
+def test_history_records_basis_singular_values(mode):
+    # A 3-dimensional problem filtered with 5 vectors: the filtered basis
+    # has rank at most 3, so rank reduction must cut.
+    r = MatrixResolvent(np.diag([1.0, 1.2, 10.0]))
+    rank_tol = 1e-12
+    result = feast(r, Contour.circle(1.1, 0.5), NumpySpan.random(3, 5, seed=0),
+                   mode=mode, rank_tol=rank_tol)
+    hist = result.history
+    assert result.converged
+    assert hist.gram_singular_values == []
+    assert len(hist.basis_singular_values) == len(hist.retained_ranks) > 0
+    for sv, (filtered, retained) in zip(hist.basis_singular_values,
+                                        hist.retained_ranks):
+        assert np.all(np.diff(sv) <= 0)              # descending
+        assert len(sv) <= filtered
+        assert retained == np.count_nonzero(sv > rank_tol * sv[0])
+    assert hist.retained_ranks[0] == (5, 3)
+
+
+def test_history_records_biorth_ranks():
+    r = MatrixResolvent(np.diag([1.0, 1.2, 10.0, 20.0]))
+    eta_tol = 1e-8
+    result = feast(r, Contour.circle(1.1, 0.5), NumpySpan.random(4, 4, seed=0),
+                   mode="biorth", eta_tol=eta_tol, seed=0)
+    hist = result.history
+    assert result.converged
+    assert hist.basis_singular_values == []
+    assert len(hist.gram_singular_values) == len(hist.retained_ranks) > 0
+    for gs, (filtered, retained) in zip(hist.gram_singular_values,
+                                        hist.retained_ranks):
+        assert len(gs) == filtered
+        assert retained == np.count_nonzero(gs > eta_tol * gs[0])
+    assert hist.retained_ranks[-1][1] == 2

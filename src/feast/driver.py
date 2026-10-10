@@ -50,19 +50,35 @@ class FeastHistory:
     residuals : list of numpy.ndarray
         Backend residuals when ``report_residuals=True``.
     gram_singular_values : list of numpy.ndarray
-        Singular values from successful biorthogonal Gram analyses.
+        Singular values from successful biorthogonal Gram analyses,
+        descending. Directions with values at or below
+        ``eta_tol * s[0]`` were cut.
+    basis_singular_values : list of numpy.ndarray
+        Singular values of the filtered basis from QR rank reduction in
+        Hermitian and right-only modes, descending and before truncation.
+        Directions with values at or below ``rank_tol * s[0]`` were
+        removed. QR may already drop zero or roundoff-level columns, so
+        an array can be shorter than the filtered span.
+    retained_ranks : list of tuple of int
+        ``(filtered, retained)`` span dimensions for each successful rank
+        decision, in every mode: the filtered span's dimension and the
+        number of directions kept by ``rank_tol`` or ``eta_tol``.
 
     Notes
     -----
     Lists need not have the same length: a failed solve increments the
-    iteration count without recording Ritz values, and Gram analysis is
-    performed only in biorthogonal mode.
+    iteration count without recording Ritz values, Gram analysis is
+    performed only in biorthogonal mode, and basis rank reduction only in
+    the other modes. Each successful rank decision appends one entry to
+    ``retained_ranks`` and one to the mode's singular value list.
     """
 
     ritz_values: list = field(default_factory=list)
     hausdorff: list = field(default_factory=list)
     residuals: list = field(default_factory=list)
     gram_singular_values: list = field(default_factory=list)
+    basis_singular_values: list = field(default_factory=list)
+    retained_ranks: list = field(default_factory=list)
 
 
 @dataclass
@@ -189,11 +205,14 @@ def feast(
     eta_tol : float, optional
         Relative singular-value threshold for kernel cleaning in
         biorthogonal mode; defaults to 1e-8. See :mod:`feast.subspace`.
+        The analyzed singular values are recorded in
+        ``history.gram_singular_values``.
     rank_tol : float, optional
         Relative singular-value threshold for filtered basis reduction
         in Hermitian and right-only modes; defaults to 1e-12. Directions
         with singular values at or below this fraction of the largest
-        are removed using QR and a small SVD. Must lie in (0, 1).
+        are removed using QR and a small SVD. Must lie in (0, 1). The
+        singular values are recorded in ``history.basis_singular_values``.
     niterations : int, optional
         Maximum iterations per attempt; defaults to 50.
     nrestarts : int, optional
@@ -338,6 +357,7 @@ def feast(
                                         eta_tol=eta_tol)
                 if analysis.ok:
                     history.gram_singular_values.append(analysis.s)
+                    history.retained_ranks.append((qr.dim, analysis.rank))
                     if analysis.cut:
                         log.info(
                             "  Kernel cleaning:\n"
@@ -358,9 +378,18 @@ def feast(
             elif not biorth:
                 try:
                     before = qr.dim
-                    orthonormalize(qr, rank_tol)
+                    sv = orthonormalize(qr, rank_tol)
+                    history.basis_singular_values.append(sv)
+                    history.retained_ranks.append((before, qr.dim))
                     log.info(
-                        "  rank reduction: retained %d of %d",
+                        "  Rank reduction:\n"
+                        "    Singular values: %s\n"
+                        "    Retained: %d of %d",
+                        np.array2string(
+                            sv,
+                            precision=1,
+                            prefix="    Singular values: ",
+                        ),
                         qr.dim,
                         before,
                     )
