@@ -103,7 +103,7 @@ class MatrixResolvent:
     def _factorization(self, z: complex):
         z = complex(z)
         if z not in self._lu:
-            log.info("MatrixResolvent: factorizing at z = %s", z)
+            log.debug("  MatrixResolvent: factorizing at z = %s", z)
             self._lu[z] = splu((z * self.B - self.A).astype(complex))
         return self._lu[z]
 

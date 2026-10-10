@@ -101,7 +101,7 @@ class Contour:
             if abs(c.imag) == 0 and (c.real - radius) * (c.real + radius) < 0
             else abs(c) + radius
         )
-        log.info(
+        log.debug(
             "Contour: circle rule=%s center=%s radius=%g npts=%d",
             rule, center, radius, npts,
         )
@@ -163,7 +163,7 @@ class Contour:
             if abs(c.imag) == 0 and (c.real - radius) * (c.real + radius) < 0
             else abs(c) + radius
         )
-        log.info(
+        log.debug(
             "Contour: ellipse rule=%s center=%s radius=%g rho=%g npts=%d",
             rule, center, radius, rho, npts,
         )

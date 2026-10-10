@@ -96,12 +96,21 @@ class FeastResult:
     iterations: int
     history: FeastHistory
 
-    def __repr__(self) -> str:
-        return (
-            f"FeastResult(converged={self.converged}, "
-            f"iterations={self.iterations}, "
-            f"eigenvalues={np.array_str(self.eigenvalues, precision=6)})"
+    def __str__(self) -> str:
+        values = np.array2string(
+            np.real_if_close(self.eigenvalues),
+            precision=6,
+            prefix="  Eigenvalues: ",
         )
+        return ("FEAST result\n"
+                f"  Converged:   {self.converged}\n"
+                f"  Iterations:  {self.iterations}\n"
+                f"  Eigenvalues: {values}")
+
+    def __repr__(self) -> str:
+        return (f"FeastResult(converged={self.converged}, "
+                f"iterations={self.iterations}, "
+                f"eigenvalues={np.array_str(self.eigenvalues, precision=6)})")
 
 
 def _hausdorff(lam: np.ndarray, lam0: np.ndarray, scale: float) -> float:
@@ -250,6 +259,50 @@ def feast(
     biorth = mode == "biorth"
     if biorth and yl is not None and yl.dim != y.dim:
         raise ValueError("left and right spans must have the same dimension")
+    log.info("==================== FEAST run start ====================")
+    if log.isEnabledFor(logging.INFO):
+        left = (f"{type(yl).__name__}(dim={yl.dim})"
+                if yl is not None else "None")
+        seed_value = (f"Generator({type(seed.bit_generator).__name__})"
+                      if isinstance(seed, np.random.Generator) else repr(seed))
+        parameters = [
+            ("resolvent", type(resolvent).__name__, "shifted-solve backend"),
+            ("contour", None, "search region and quadrature"),
+            ("y", f"{type(y).__name__}(dim={y.dim})", "initial right span"),
+            ("mode", repr(mode), "reduced eigensolver and basis treatment"),
+            ("yl", left, "initial left span; None generates one in biorth"),
+            ("stop_tol", stop_tol, "relative eigenvalue-set tolerance"),
+            ("eta_tol", eta_tol, "B-Gram rank cutoff; biorth mode only"),
+            ("rank_tol", rank_tol, "basis rank cutoff; hermitian/right only"),
+            ("niterations", niterations, "maximum iterations per attempt"),
+            ("nrestarts", nrestarts, "total attempts, including the first"),
+            ("expected_dim", expected_dim, "minimum target count; None unset"),
+            ("nrefresh", nrefresh, "maximum span replenishments per attempt"),
+            ("check_contour", check_contour, "pruning interval; 0 disables"),
+            ("report_residuals", report_residuals, "record and log residuals"),
+            ("reduce_sym", reduce_sym, "reuse conjugate-node factorizations"),
+            ("seed", seed_value, "randomness for left span and augmentation"),
+        ]
+        log.info("FEAST parameters")
+        for name, value, description in parameters:
+            if name == "contour":
+                log.info("  contour — %s", description)
+                members = [
+                    ("name", contour.name),
+                    ("center", contour.center),
+                    ("radius", contour.radius),
+                    ("npts", contour.npts),
+                    ("scale", contour.scale),
+                    ("z", f"{contour.z.size} complex quadrature nodes"),
+                    ("w", f"{contour.w.size} complex quadrature weights"),
+                    ("within", "membership predicate"),
+                ]
+                for member, member_value in members:
+                    log.info("    %s = %s", member, member_value)
+                log.debug("    z = %s", contour.z)
+                log.debug("    w = %s", contour.w)
+                continue
+            log.info("  %s = %s  — %s", name, value, description)
     if biorth and yl is None:
         # independent random left span, built via Span protocol only
         m = y.dim
@@ -281,42 +334,52 @@ def feast(
             ql = projector.apply_adj(yl) if biorth else None
 
             if biorth and qr.dim:
-                analysis = analyze_gram(
-                    resolvent.gram(ql, qr), eta_tol=eta_tol
-                )
+                analysis = analyze_gram(resolvent.gram(ql, qr),
+                                        eta_tol=eta_tol)
                 if analysis.ok:
                     history.gram_singular_values.append(analysis.s)
                     if analysis.cut:
                         log.info(
-                            "kernel cleaning: cutting %s of %d "
-                            "(singular values %s)",
-                            analysis.cut, qr.dim,
-                            np.array_str(analysis.s, precision=1),
+                            "  Kernel cleaning:\n"
+                            "    Singular values: %s\n"
+                            "    Cutting columns: %s of 0:%d",
+                            np.array2string(
+                                analysis.s,
+                                precision=1,
+                                prefix="    Singular values: ",
+                            ),
+                            analysis.cut,
+                            qr.dim - 1,
                         )
                     apply_cleaning(analysis, ql, qr)
                 else:
-                    log.warning("invalid B-Gram matrix; restarting")
+                    log.warning("  invalid B-Gram matrix; restarting")
                     break
             elif not biorth:
                 try:
                     before = qr.dim
                     orthonormalize(qr, rank_tol)
                     log.info(
-                        "rank reduction: retained %d of %d", qr.dim, before,
+                        "  rank reduction: retained %d of %d",
+                        qr.dim,
+                        before,
                     )
                 except (LinAlgError, ValueError) as exc:
-                    log.warning("rank reduction failed (%s); restarting", exc)
+                    log.warning(
+                        "  rank reduction failed (%s); restarting",
+                        exc,
+                    )
                     break
 
             if qr.dim == 0:
                 if refreshes_left > 0 and it < niterations:
                     count = max(expected_dim or y.dim, 1)
-                    log.info("no usable directions; refreshing %d", count)
+                    log.info("  no usable directions; refreshing %d", count)
                     y, yl = _augment(qr, ql, count, rng)
                     refreshes_left -= 1
                     lam0 = np.array([], dtype=complex)
                     continue
-                log.warning("no usable directions; restarting")
+                log.warning("  no usable directions; restarting")
                 break
 
             h_a, h_b = resolvent.rayleigh(ql if biorth else qr, qr)
@@ -325,7 +388,7 @@ def feast(
                 if not np.all(np.isfinite(lam)):
                     raise LinAlgError("non-finite Ritz values")
             except (LinAlgError, ValueError) as exc:
-                log.warning("small eigensolve failed (%s); restarting", exc)
+                log.warning("  small eigensolve failed (%s); restarting", exc)
                 break
 
             qr.rotate(wr)
@@ -339,7 +402,6 @@ def feast(
             if report_residuals:
                 res = resolvent.residual(lam, y, yl)
                 history.residuals.append(res)
-                log.info("residuals: %s", np.array_str(res, precision=2))
             inside = contour.within(lam)
             cut = [k for k in range(len(lam)) if not inside[k]]
             saved_lam, saved_y, saved_yl = lam[inside].copy(), y, yl
@@ -354,32 +416,61 @@ def feast(
             same_count = len(saved_lam) == len(lam0)
             history.hausdorff.append(dist)
             log.info(
-                "Ritz values %s; in-contour relative Hausdorff %.3e",
-                np.array_str(np.sort_complex(lam), precision=6), dist,
+                "  Ritz values: %s",
+                np.array2string(
+                    np.sort_complex(lam),
+                    precision=6,
+                    prefix="  Ritz values: ",
+                ),
             )
+            if report_residuals:
+                log.info(
+                    "  Residuals: %s",
+                    np.array2string(
+                        np.asarray(res)[np.argsort(lam)],
+                        prefix="  Residuals: ",
+                        formatter={"float_kind": lambda x: f"{x:.3e}"},
+                    ),
+                )
+            if np.isinf(dist) and len(saved_lam) == 0:
+                reason = "as expected: current in-contour set is empty"
+            elif np.isinf(dist) and len(lam0) == 0:
+                if it == 1:
+                    reason = ("as expected, since no prior set")
+                else:
+                    reason = ("as expected: comparison reset / no prior set")
+            else:
+                reason = None
+            if reason:
+                log.info(
+                    "  In-contour relative Hausdorff: %.3e (%s)",
+                    dist,
+                    reason,
+                )
+            else:
+                log.info("  In-contour relative Hausdorff: %.3e", dist)
 
-            keep_enough = (
-                expected_dim is None or len(saved_lam) >= expected_dim
-            )
+            keep_enough = (expected_dim is None
+                           or len(saved_lam) >= expected_dim)
             if check_contour and it % check_contour == 0:
                 if cut and len(saved_lam) and keep_enough:
-                    log.info("removing out-of-contour Ritz values %s", cut)
+                    log.info("  removing out-of-contour Ritz values %s", cut)
                     y, yl = saved_y, saved_yl
 
             if expected_dim is not None and y.dim < expected_dim:
                 if refreshes_left > 0 and it < niterations:
                     d = expected_dim - y.dim
-                    log.info("refreshing span with %d random vector(s)", d)
+                    log.info("  refreshing span with %d random vector(s)", d)
                     y, yl = _augment(y, yl, d, rng)
                     refreshes_left -= 1
                     lam0 = np.array([], dtype=complex)
                     continue
-                log.warning("requested span dimension was not recovered")
+                log.warning("  requested span dimension was not recovered")
                 break
 
             lam0 = saved_lam
             if y.dim == 0:
-                log.warning("no candidates left; restarting")
+                log.warning("  no candidates left; restarting")
                 break
             if keep_enough and same_count and dist < stop_tol:
                 log.info("FEAST converged: Hausdorff %.3e", dist)
@@ -399,7 +490,7 @@ def feast(
             saved_yl = yl.copy()
             saved_yl.remove(list(range(saved_yl.dim)))
 
-    return FeastResult(
+    result = FeastResult(
         eigenvalues=saved_lam,
         right=saved_y,
         left=saved_yl,
@@ -407,3 +498,6 @@ def feast(
         iterations=total_iterations,
         history=history,
     )
+    log.info("%s", result)
+    log.info("===================== FEAST run end =====================\n")
+    return result
