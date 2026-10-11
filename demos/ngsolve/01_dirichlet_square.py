@@ -11,7 +11,7 @@ and start from an NGSpan. The feast() call is the same.
 Requires: ngsolve (pip install 'feast-eig[ngsolve]').
 Run:      python demos/ngsolve/01_dirichlet_square.py
           netgen demos/ngsolve/01_dirichlet_square.py
-The Netgen window displays the lowest mode; close it to finish the run.
+The latter displays the lowest mode in netgen GUI.
 """
 
 import logging
