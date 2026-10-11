@@ -68,6 +68,14 @@ class NumpySpan:
     def copy(self) -> "NumpySpan":
         return NumpySpan(self.data.copy())
 
+    def dot(self, other: "NumpySpan") -> np.ndarray:
+        """Euclidean coefficient inner products ``self^H other``.
+
+        Optional span method used by the eigenvalue count estimate.
+        Returns an array of shape ``(self.dim, other.dim)``.
+        """
+        return self.data.conj().T @ other.data
+
     def qr(self) -> np.ndarray:
         """Replace the columns by Q and return the reduced QR factor R."""
         q, r = np.linalg.qr(self.data, mode="reduced")
@@ -132,6 +140,28 @@ class MatrixResolvent:
         return yl.data.conj().T @ (self.B @ yr.data)
 
     def residual(self, lam, yr: NumpySpan, yl: NumpySpan | None = None):
+        """Return unnormalized Euclidean 2-norms of algebraic residuals.
+
+        For each right eigenpair, compute ``||A x - lambda B x||_2``
+        in coefficient coordinates. No mass weighting or division by
+        the eigenvalue, vector norm, or matrix norms is applied.
+
+        If ``yl`` is supplied, also compute the left residual
+        ``||A^H y - conjugate(lambda) B^H y||_2`` and return the larger
+        right/left norm for each pair.
+
+        Returns
+        -------
+        numpy.ndarray
+            One absolute residual norm per eigenvalue, in input order.
+
+        Notes
+        -----
+        These values depend on eigenvector scaling and, for finite
+        element matrices, the mesh and basis. They are not the discrete
+        dual L2 norms ``sqrt(r^H B^{-1} r)``. B-orthonormal eigenvectors
+        do not imply that the residual is measured in a B-weighted norm.
+        """
         r = self.A @ yr.data - (self.B @ yr.data) * np.asarray(lam)
         res = np.linalg.norm(r, axis=0)
         if yl is not None:

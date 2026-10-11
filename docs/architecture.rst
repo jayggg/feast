@@ -13,7 +13,9 @@ the discretization.
 ``qr``.
 Mutating methods operate in place. ``rotate(V)`` replaces Y with YV,
 including when V has fewer columns. Symmetry reduction also requires
-an in-place ``conjugate`` method.
+an in-place ``conjugate`` method, and the eigenvalue count estimate a
+``dot(other)`` method returning the Euclidean coefficient inner products
+``Yᴴ X`` as a small array.
 
 ``qr()`` replaces Y by orthonormal columns Q and returns a small factor R
 such that Y = Q R up to roundoff. R need not be triangular: a backend may

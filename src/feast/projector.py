@@ -64,7 +64,13 @@ class Resolvent(Protocol):
         ...
 
     def residual(self, lam: np.ndarray, yr: Span, yl: Span | None = None):
-        """Optional: norms of A y − λ B y (and left residuals if yl)."""
+        """Optional: one residual diagnostic per eigenvalue, in input order.
+
+        The backend must document its norm, normalization, and treatment
+        of left residuals when ``yl`` is supplied. The driver records
+        these values without further normalization. MatrixResolvent uses
+        unnormalized Euclidean coefficient-vector 2-norms.
+        """
         ...
 
 

@@ -8,6 +8,7 @@ core works without NGSolve installed.
 __version__ = "2.0.0.dev0"
 
 from .contour import Contour
+from .count import EigenvalueCountEstimate, estimate_eigenvalue_count
 from .driver import FeastHistory, FeastResult, feast
 from .estimator import (
     EigenspaceErrorEstimate,
@@ -35,5 +36,7 @@ __all__ = [
     "SourceErrorEstimator",
     "EigenspaceErrorEstimate",
     "estimate_eigenspace_error",
+    "EigenvalueCountEstimate",
+    "estimate_eigenvalue_count",
     "__version__",
 ]

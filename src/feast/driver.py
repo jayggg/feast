@@ -1,15 +1,36 @@
 """The FEAST driver: one iteration loop for all modes.
 
+:func:`feast` is the entry point. It combines
+
+- a :class:`~feast.contour.Contour` (quadrature and search region),
+- a backend :class:`~feast.projector.Resolvent` (shifted solves and
+  reduced matrices), for example
+  :class:`~feast.backends.numpy_backend.MatrixResolvent` or the NGSolve
+  resolvents in :mod:`feast.backends.ngsolve.resolvent` and
+  :mod:`feast.backends.ngsolve.poly`, and
+- a starting :class:`~feast.span.Span`,
+
+and returns a :class:`FeastResult` with diagnostics in
+:class:`FeastHistory`.
+
 The ``mode`` parameter selects the reduced eigenproblem and subspace
 treatment:
 
-- ``"hermitian"``: A self-adjoint; Rayleigh–Ritz via eigh.
-- ``"right"``: non-self-adjoint, right eigenvectors only.
+- ``"hermitian"``: A self-adjoint; Rayleigh–Ritz via eigh, after rank
+  reduction by :func:`~feast.subspace.orthonormalize`.
+- ``"right"``: non-self-adjoint, right eigenvectors only; same rank
+  reduction.
 - ``"biorth"``: non-self-adjoint with biorthogonal left/right spans and
-  SVD kernel cleaning between projector applications.
+  SVD kernel cleaning (:func:`~feast.subspace.analyze_gram`,
+  :func:`~feast.subspace.apply_cleaning`) between projector
+  applications.
 
 Subspace decisions (SVD cuts, convergence, refresh) are made from small
-m×m matrices supplied by the backend.
+m×m matrices supplied by the backend. Related tools: the completeness
+check in :mod:`feast.count`, the eigenspace error estimator in
+:mod:`feast.estimator`, contour splitting in :mod:`feast.zoom`, and
+direct projector application with
+:class:`~feast.projector.SpectralProjectorApprox`.
 """
 
 from __future__ import annotations
@@ -21,6 +42,7 @@ import numpy as np
 from scipy.linalg import LinAlgError, eig, eigh
 
 from .contour import Contour
+from .count import EigenvalueCountEstimate, estimate_eigenvalue_count
 from .projector import (
     Resolvent,
     SpectralProjectorApprox,
@@ -45,17 +67,20 @@ class FeastHistory:
     ritz_values : list of numpy.ndarray
         Ritz values after each successful reduced solve, before trimming.
     hausdorff : list of float
-        In-contour eigenvalue-set distances divided by ``contour.scale``.
+        In-contour eigenvalue-set distances divided by the contour's
+        ``scale`` (see :class:`~feast.contour.Contour`).
         Infinite if either set is empty or the comparison was reset.
     residuals : list of numpy.ndarray
-        Backend residuals when ``report_residuals=True``.
+        Backend residuals (:meth:`~feast.projector.Resolvent.residual`)
+        when ``report_residuals=True``.
     gram_singular_values : list of numpy.ndarray
-        Singular values from successful biorthogonal Gram analyses,
-        descending. Directions with values at or below
-        ``eta_tol * s[0]`` were cut.
+        Singular values from successful biorthogonal Gram analyses
+        (:func:`~feast.subspace.analyze_gram`), descending. Directions
+        with values at or below ``eta_tol * s[0]`` were cut.
     basis_singular_values : list of numpy.ndarray
-        Singular values of the filtered basis from QR rank reduction in
-        Hermitian and right-only modes, descending and before truncation.
+        Singular values of the filtered basis from QR rank reduction
+        (:func:`~feast.subspace.orthonormalize`) in Hermitian and
+        right-only modes, descending and before truncation.
         Directions with values at or below ``rank_tol * s[0]`` were
         removed. QR may already drop zero or roundoff-level columns, so
         an array can be shorter than the filtered span.
@@ -102,7 +127,13 @@ class FeastResult:
     iterations : int
         Total attempted iterations across all restarts.
     history : FeastHistory
-        Recorded iteration diagnostics.
+        Recorded iteration diagnostics; see :class:`FeastHistory`.
+    count_estimate : EigenvalueCountEstimate or None
+        When ``count_probes > 0``, the completeness check: an
+        :class:`~feast.count.EigenvalueCountEstimate` whose
+        ``unexplained`` field is the filter weight not accounted for by
+        the returned eigenvalues (near 0 when nothing is missing; see
+        :mod:`feast.count`). Otherwise ``None``.
     """
 
     eigenvalues: np.ndarray
@@ -111,6 +142,7 @@ class FeastResult:
     converged: bool
     iterations: int
     history: FeastHistory
+    count_estimate: EigenvalueCountEstimate | None = None
 
     def __str__(self) -> str:
         values = np.array2string(
@@ -118,15 +150,28 @@ class FeastResult:
             precision=6,
             prefix="  Eigenvalues: ",
         )
-        return ("FEAST result\n"
+        text = ("FEAST result\n"
                 f"  Converged:   {self.converged}\n"
                 f"  Iterations:  {self.iterations}\n"
                 f"  Eigenvalues: {values}")
+        if self.count_estimate is not None:
+            text += f"\n  Count estimate: {self.count_estimate}"
+        return text
 
     def __repr__(self) -> str:
         return (f"FeastResult(converged={self.converged}, "
                 f"iterations={self.iterations}, "
                 f"eigenvalues={np.array_str(self.eigenvalues, precision=6)})")
+
+
+def _probe_rng(seed) -> np.random.Generator:
+    """Random stream for count probes, independent of the driver's."""
+    if isinstance(seed, np.random.Generator):
+        try:
+            return seed.spawn(1)[0]           # numpy >= 1.25
+        except AttributeError:
+            return np.random.default_rng(seed.integers(2**63))
+    return np.random.default_rng(np.random.SeedSequence(seed).spawn(1)[0])
 
 
 def _hausdorff(lam: np.ndarray, lam0: np.ndarray, scale: float) -> float:
@@ -175,6 +220,7 @@ def feast(
     check_contour: int = 3,
     report_residuals: bool = False,
     reduce_sym: bool = False,
+    count_probes: int = 0,
     seed=None,
 ) -> FeastResult:
     """Run FEAST for eigenvalues of the resolvent's pencil enclosed by
@@ -184,17 +230,30 @@ def feast(
     ----------
     resolvent : Resolvent
         Backend implementing the pencil's shifted solves and reduced
-        matrices.
+        matrices (the :class:`~feast.projector.Resolvent` protocol), for
+        example :class:`~feast.backends.numpy_backend.MatrixResolvent`,
+        :class:`~feast.backends.ngsolve.resolvent.NGPencilResolvent`,
+        :class:`~feast.backends.ngsolve.resolvent.NGCallbackResolvent` or
+        :class:`~feast.backends.ngsolve.poly.NGPolyResolvent`.
     contour : Contour
-        Quadrature rule and membership test for the search region.
+        Quadrature rule and membership test for the search region; build
+        one with :meth:`~feast.contour.Contour.circle`,
+        :meth:`~feast.contour.Contour.ellipse` or
+        :meth:`~feast.contour.Contour.custom`.
     y : Span
-        Initial right span. Its dimension limits the number of Ritz
-        values in the first iteration; refreshes and restarts may enlarge
-        it. Pass a copy if the initial span must be preserved.
+        Initial right span (the :class:`~feast.span.Span` protocol), for
+        example :meth:`NumpySpan.random
+        <feast.backends.numpy_backend.NumpySpan.random>` or
+        :meth:`NGSpan.random <feast.backends.ngsolve.span.NGSpan.random>`.
+        Its dimension limits the number of Ritz values in the first
+        iteration and should exceed the number of eigenvalues expected
+        inside the contour; refreshes and restarts may enlarge it. Pass a
+        copy if the initial span must be preserved.
     mode : {"hermitian", "right", "biorth"}, optional
         Hermitian Rayleigh–Ritz, right-only iteration, or a two-sided
-        iteration with SVD kernel cleaning. Hermitian mode requires a
-        positive definite reduced B matrix.
+        iteration with SVD kernel cleaning (see the module description
+        above). Hermitian mode requires a positive definite reduced B
+        matrix.
     yl : Span or None, optional
         Initial left span for ``mode="biorth"``, with the same dimension
         as ``y``. If omitted, independent random vectors are generated
@@ -204,14 +263,16 @@ def feast(
         successive eigenvalue sets; defaults to 1e-11.
     eta_tol : float, optional
         Relative singular-value threshold for kernel cleaning in
-        biorthogonal mode; defaults to 1e-8. See :mod:`feast.subspace`.
+        biorthogonal mode; defaults to 1e-8. See
+        :func:`~feast.subspace.analyze_gram`.
         The analyzed singular values are recorded in
         ``history.gram_singular_values``.
     rank_tol : float, optional
         Relative singular-value threshold for filtered basis reduction
         in Hermitian and right-only modes; defaults to 1e-12. Directions
         with singular values at or below this fraction of the largest
-        are removed using QR and a small SVD. Must lie in (0, 1). The
+        are removed using QR and a small SVD
+        (:func:`~feast.subspace.orthonormalize`). Must lie in (0, 1). The
         singular values are recorded in ``history.basis_singular_values``.
     niterations : int, optional
         Maximum iterations per attempt; defaults to 50.
@@ -236,13 +297,34 @@ def feast(
         only in-contour Ritz values, independently of this setting.
     report_residuals : bool, optional
         Record backend residuals in the history; defaults to ``False``.
-        The backend must implement ``residual``. Residuals do not control
+        The backend must implement
+        :meth:`~feast.projector.Resolvent.residual`. Residuals do not
+        control
         convergence, and their norm and normalization depend on the
         backend.
     reduce_sym : bool, optional
-        Reuse factorizations for conjugate node pairs. Requires
+        Reuse factorizations for conjugate node pairs, through
+        :class:`~feast.projector.SymmetryReducedProjector`. Requires
         ``mode="hermitian"``, a real pencil, a node set symmetric about
         the real axis, and spans with ``conjugate()``. Defaults to False.
+    count_probes : int, optional
+        Number of random probe vectors for the completeness check;
+        defaults to 0, which disables it. After the iteration stops,
+        :func:`~feast.count.estimate_eigenvalue_count` estimates the
+        *unexplained weight*: Σ Re f(λ) over all eigenvalues not
+        returned, where f is the contour's filter
+        (:meth:`~feast.contour.Contour.filter`), about 1 well inside the
+        contour and near 0 far outside. A value near 0 means nothing the
+        filter sees was missed; about 1 per eigenvalue suggests missed
+        eigenvalues, and up to about 1/2 an eigenvalue just outside the
+        contour. A warning is logged when it exceeds both 1/4 and three
+        standard errors (the noise level of the estimate, which shrinks
+        like 1/√count_probes). The result is ``result.count_estimate``,
+        an :class:`~feast.count.EigenvalueCountEstimate`; 16 probes is a
+        reasonable choice. The cost is one projector application to this
+        many vectors. Requires spans with ``dot()``. The probes use their
+        own random stream, so the iteration is unaffected. Definitions,
+        method and references: :mod:`feast.count`.
     seed : int or numpy.random.Generator or None, optional
         Randomness for refreshes, restarts, and the default left span.
         Seed the initial right span separately for reproducibility.
@@ -250,17 +332,29 @@ def feast(
     Returns
     -------
     FeastResult
-        Last successfully computed in-contour Ritz pairs and diagnostics.
+        Last successfully computed in-contour Ritz pairs and diagnostics
+        (:class:`FeastResult`, with ``history`` a :class:`FeastHistory`).
         Spans have one column per eigenvalue, including on nonconvergence.
         If no reduced solve succeeds, the eigenvalues and spans are empty.
+
+    See Also
+    --------
+    feast.count.estimate_eigenvalue_count : The completeness check, also
+        usable before a run to size the starting span.
+    feast.estimator.estimate_eigenspace_error : Eigenspace error
+        estimate for a computed span, from source-problem estimators.
+    feast.zoom.simple_multiple_zoom : Split a contour into one contour
+        per eigenvalue or cluster.
+    feast.projector.SpectralProjectorApprox : Apply the filter
+        P = Σ wₖ R(zₖ) without iterating.
 
     Notes
     -----
     A refresh or restart resets the convergence comparison. At least two
     successful solves with equal, nonzero in-contour eigenvalue counts
     are needed afterward. Empty in-contour sets are nonconverged.
-    See the documentation's current limitations for eigenvalue-set
-    convergence caveats.
+    Convergence does not certify that every enclosed eigenvalue was
+    found; use ``count_probes`` and see :doc:`/limitations`.
     """
     if mode not in _MODES:
         raise ValueError(f"mode must be one of {_MODES}")
@@ -270,6 +364,8 @@ def feast(
         raise ValueError("rank_tol must be finite and in (0, 1)")
     if nrestarts <= 0:
         nrestarts = 1
+    if count_probes < 0:
+        raise ValueError("count_probes must be nonnegative")
     rng = np.random.default_rng(seed)
     if reduce_sym:
         projector = SymmetryReducedProjector(resolvent, contour)
@@ -300,6 +396,7 @@ def feast(
             ("check_contour", check_contour, "pruning interval; 0 disables"),
             ("report_residuals", report_residuals, "record and log residuals"),
             ("reduce_sym", reduce_sym, "reuse conjugate-node factorizations"),
+            ("count_probes", count_probes, "count-estimate probes; 0 off"),
             ("seed", seed_value, "randomness for left span and augmentation"),
         ]
         log.info("FEAST parameters")
@@ -483,7 +580,7 @@ def feast(
                            or len(saved_lam) >= expected_dim)
             if check_contour and it % check_contour == 0:
                 if cut and len(saved_lam) and keep_enough:
-                    log.info("  removing out-of-contour Ritz values %s", cut)
+                    log.info("  Removing out-of-contour Ritz values %s", cut)
                     y, yl = saved_y, saved_yl
 
             if expected_dim is not None and y.dim < expected_dim:
@@ -519,6 +616,23 @@ def feast(
             saved_yl = yl.copy()
             saved_yl.remove(list(range(saved_yl.dim)))
 
+    count_est = None
+    if count_probes:
+        count_est = estimate_eigenvalue_count(
+            resolvent, contour, saved_y, count_probes,
+            seed=_probe_rng(seed), projector=projector,
+            eigenvalues=saved_lam, right=saved_y, left=saved_yl,
+        )
+        log.info("FEAST completeness check: %s", count_est)
+        if count_est.suggests_missing():
+            log.warning(
+                "FEAST completeness check: weight %.2g ± %.2g unexplained "
+                "by the %d eigenvalues found; some may be missing inside "
+                "the contour (try a larger span) or lie just outside it",
+                count_est.unexplained, count_est.unexplained_stderr,
+                len(saved_lam),
+            )
+
     result = FeastResult(
         eigenvalues=saved_lam,
         right=saved_y,
@@ -526,6 +640,7 @@ def feast(
         converged=converged,
         iterations=total_iterations,
         history=history,
+        count_estimate=count_est,
     )
     log.info("%s", result)
     log.info("===================== FEAST run end =====================\n")

@@ -8,6 +8,11 @@ by the Span and Gram/Rayleigh matrices supplied by the Resolvent), which are
 reduction results that a distributed backend must make consistent
 on every rank.
 
+Two optional methods extend the protocol: ``conjugate()`` (in place),
+needed for symmetry reduction, and ``dot(other)``, returning the
+Euclidean coefficient inner products ``self^H other`` as a small array,
+needed for the eigenvalue count estimate in :mod:`feast.count`.
+
 ``NumpySpan`` (in ``feast.backends.numpy_backend``) is the reference
 implementation.
 """

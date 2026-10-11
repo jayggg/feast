@@ -132,6 +132,17 @@ class NGSpan:
             c._mv[k].data = self._mv[k]
         return c
 
+    def dot(self, other: "NGSpan") -> np.ndarray:
+        """Euclidean coefficient inner products ``self^H other``.
+
+        Optional span method used by the eigenvalue count estimate.
+        Returns an array of shape ``(self.dim, other.dim)``.
+        """
+        if self.dim == 0 or other.dim == 0:
+            return np.zeros((self.dim, other.dim), dtype=complex)
+        # ng.InnerProduct(a, b)[i, j] = conj(b_i) . a_j, i.e. (b^H a)
+        return np.array(ng.InnerProduct(other._mv, self._mv))
+
     def qr(self, ipmat=None) -> np.ndarray:
         """Replace Y by an orthonormal basis Q and return R with Y ≈ Q R.
 

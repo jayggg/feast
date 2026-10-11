@@ -70,8 +70,13 @@ Diagnostics
 
 The convergence flag measures stability of nonempty in-contour Ritz sets;
 it does not certify residual accuracy or completeness. Inspect residuals
-and span dimensions. See :doc:`limitations` for currently known failure
-cases. Returned pairs always satisfy the contour's membership predicate,
+and span dimensions. Passing ``count_probes=16`` adds a completeness
+check: ``result.count_estimate.unexplained`` estimates the filter weight
+of eigenvalues FEAST did not return, near 0 when nothing was missed and
+about 1 per missed eigenvalue, and a warning is logged when it is
+clearly above its noise level (:mod:`feast.count` explains the numbers).
+See :doc:`limitations` for currently known failure cases. Returned pairs
+always satisfy the contour's membership predicate,
 including when the iteration limit is reached. Empty results are
 nonconverged.
 

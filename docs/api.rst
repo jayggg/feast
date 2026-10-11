@@ -44,6 +44,12 @@ Eigenspace error estimation
 .. automodule:: feast.estimator
    :members:
 
+Eigenvalue count estimation
+---------------------------------
+
+.. automodule:: feast.count
+   :members:
+
 Contour splitting
 -----------------------
 
