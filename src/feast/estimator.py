@@ -1,7 +1,10 @@
 """Eigenspace error estimation from source-problem error estimators.
 
-Implements Theorem 3.10 of Gopalakrishnan & Pinochet-Soto, "Estimators
-for Eigenspace Error": if a backend can estimate the error of the
+Implements Theorem 3.10 of J. Gopalakrishnan and G. Pinochet-Soto,
+"Reliable eigenspace error estimation using source error estimators,"
+Comput. Methods Appl. Math. (2026),
+https://doi.org/10.1515/cmam-2025-0161 ([GP2026]_ in
+:doc:`/references`): if a backend can estimate the error of the
 discrete source problems u_h ≈ (z_j − A)⁻¹ v at the quadrature nodes
 z_j, those estimators combine into a reliable estimator for the gap
 between the computed eigenspace E_h and the exact eigenspace E.

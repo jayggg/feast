@@ -11,8 +11,17 @@ The package separates three concepts:
 - `feast()`: Hermitian, right-only, or biorthogonal iteration returning a
   `FeastResult` with vectors, eigenvalues, and diagnostics.
 
-NumPy/SciPy matrix backends are included. NGSolve backends support finite
-element pencils, callback resolvents, and polynomial eigenproblems.
+Two resolvent backends ship with the package:
+
+- `feast.backends.numpy_backend` handles dense NumPy and sparse SciPy
+  matrices: linear pencils `A x = λ B x` (`MatrixResolvent`) and
+  polynomial eigenproblems `(A0 + λ A1 + ⋯ + λᵈ Ad) x = 0` of any degree
+  (`MatrixPolyResolvent`). It needs only the core dependencies.
+- `feast.backends.ngsolve` handles the same two problem types for
+  NGSolve finite element matrices (`NGPencilResolvent`,
+  `NGPolyResolvent`), plus resolvents given by a solve callback
+  (`NGCallbackResolvent`). It requires NGSolve, which is not installed
+  by default when installing this package.
 
 ## Installation
 
@@ -22,9 +31,12 @@ From this checkout, using Python 3.10 or later:
 python -m pip install -e .
 ```
 
-Use your existing NGSolve Python environment, or install the optional extra
-with `python -m pip install -e '.[ngsolve]'`. The PyPI distribution named
-`feast` is unrelated to this project.
+This installs only the NumPy and SciPy dependencies. NGSolve is needed
+only if you import `feast.backends.ngsolve`. For finite element
+computations, either use your existing NGSolve Python environment, or
+install the optional extra with `python -m pip install -e '.[ngsolve]'`.
+
+(Note that the PyPI distribution named `feast` is unrelated to this project.)
 
 ## Quick start
 
@@ -58,7 +70,9 @@ python -m sphinx -b html -W --keep-going docs docs/_build/html
 
 Open `docs/_build/html/index.html`, or run
 `sphinx-autobuild docs docs/_build/html --watch src --watch demos` for a
-live-reloading preview at http://127.0.0.1:8000. Sphinx generates the API reference from
+live-reloading preview at http://127.0.0.1:8000.
+
+Sphinx generates the API reference from
 NumPy-style docstrings using autodoc and Napoleon. Rerun the build after
 edits; no separate API-generation command is needed. See
 [documentation maintenance](docs/building.rst) for details.

@@ -100,7 +100,8 @@ Eigenspace error estimates
 representations at the contour nodes, forms their Gram matrix G and a
 positive definite basis Gram matrix M, and solves ``G x = λ M x``.
 The largest eigenvalue gives the squared estimator and its eigenvector
-identifies the worst direction in the computed eigenspace.
+identifies the worst direction in the computed eigenspace. This is
+the estimator of [GP2026]_ (Theorem 3.10).
 
 The source estimator must supply representations, not scalar norms.
 Its objects must support ``copy`` and ``rotate``. Reliability requires

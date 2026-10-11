@@ -43,7 +43,11 @@ Polynomial eigenproblems
 ------------------------------
 
 For ``A(λ) = A0 + λ A1 + ... + λᵈ Ad``, pass the assembled coefficient
-matrices to ``NGPolyResolvent``. Its initial spans live on
+matrices to ``NGPolyResolvent``. It is the NGSolve counterpart of
+:class:`~feast.backends.numpy_backend.MatrixPolyResolvent` and has the
+same ``first`` and ``last`` helpers. Both implement the companion
+linearization of [GPV2022]_, factorizing only the ``fes.ndof``-sized
+matrix ``A(z)`` at each quadrature node. Its initial spans live on
 ``R.product_fes``, whose vectors have ``d * fes.ndof`` entries.
 
 Continuing from the finite element assembly above:

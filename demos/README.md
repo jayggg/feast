@@ -1,3 +1,4 @@
+
 # Demos
 
 Small, complete scripts showing typical use of `feast`. They are also
@@ -8,6 +9,13 @@ suite (`tests/test_demos.py`).
 | --- | --- | --- |
 | `core/01_quickstart.py` | Eigenvalues of a small matrix inside a circle | numpy, scipy |
 | `core/02_modes.py` | `hermitian`, `right` and `biorth` modes on one sparse pencil | numpy, scipy |
+| `core/03_generalized_pencil.py` | `A x = λ B x` with a mass matrix; B-orthonormality, residuals | numpy, scipy |
+| `core/04_contours.py` | Circle, ellipse and a custom rectangle; filter values | numpy, scipy |
+| `core/05_diagnostics.py` | Logging levels, `result.history`, checking results, nonconvergence | numpy, scipy |
+| `core/06_projector.py` | `SpectralProjectorApprox` applied directly; `P = V f(Λ) V⁻¹`; `apply` vs `apply_adj` on a non-normal matrix | numpy, scipy |
+| `core/07_symmetry.py` | `reduce_sym=True` halves the factorizations | numpy, scipy |
+| `core/08_zoom.py` | Splitting one contour into one per eigenvalue group | numpy, scipy |
+| `core/09_polynomial.py` | Quadratic eigenproblem with `MatrixPolyResolvent` | numpy, scipy |
 | `ngsolve/01_dirichlet_square.py` | Finite element pencil, degenerate eigenvalues | ngsolve |
 
 Run one from the repository root, e.g. `python demos/core/01_quickstart.py`,
@@ -36,5 +44,5 @@ Backend demos show only what is specific to that backend. If everything
 after building the resolvent and span is the same as in a core demo, say
 so and refer to it instead of repeating it.
 
-Research runs, convergence studies and paper reproductions do not
+Research runs, convergence studies and project-specific reproductions do not
 belong here.
